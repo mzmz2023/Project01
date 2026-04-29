@@ -1,0 +1,14 @@
+# 代码所有权配置
+# 每个模块的负责人自动被指派为 PR Reviewer
+
+/data/       @user-A
+/features/   @user-A
+/notebooks/  @user-A
+/models/     @user-B
+/scripts/    @user-B
+/configs/    @user-B
+/server/     @user-C
+/api/        @user-C
+/db/         @user-C
+/client/     @user-D
+/docker-compose.yml @user-C
