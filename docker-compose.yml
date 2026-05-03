@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: movie-recommend-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # 挂载数据库文件，让数据持久化
+      - ./recommend.db:/app/recommend.db
+    environment:
+      - PYTHONPATH=/app
