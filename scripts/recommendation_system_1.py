@@ -83,6 +83,20 @@ def load_data(data_path):
     print(f"用户数：{df_ratings['CustomerID'].nunique()}")
     print(f"电影数：{df_ratings['MovieID'].nunique()}")
 
+    # 过滤低频用户和电影（减少数据量、加速训练、降低噪声）
+    print("\n正在过滤低频用户和电影...")
+    user_counts = df_ratings['CustomerID'].value_counts()
+    movie_counts = df_ratings['MovieID'].value_counts()
+    active_users = user_counts[user_counts >= 5].index
+    active_movies = movie_counts[movie_counts >= 10].index
+    df_ratings = df_ratings[
+        df_ratings['CustomerID'].isin(active_users) &
+        df_ratings['MovieID'].isin(active_movies)
+    ]
+    print(f"过滤后数据量：{len(df_ratings)}")
+    print(f"用户数：{df_ratings['CustomerID'].nunique()}")
+    print(f"电影数：{df_ratings['MovieID'].nunique()}")
+
     # 重新编码用户/电影ID为连续索引（方便模型计算）
     print("\n正在重新编码ID...")
     user_ids = df_ratings['CustomerID'].unique()
@@ -312,7 +326,7 @@ class ALSRecommender:
     ALS推荐器：封装模型训练、评估、预测逻辑
     """
 
-    def __init__(self, train_data, val_data, id_mappings, n_factors=128, lr=0.001, epochs=25, batch_size=8192):
+    def __init__(self, train_data, val_data, id_mappings, n_factors=64, lr=0.002, epochs=15, batch_size=16384):
         """
         初始化ALS推荐器
         参数：
@@ -449,7 +463,7 @@ class ALSRecommender:
                 early_stop_count = 0
             else:
                 early_stop_count += 1
-                if early_stop_count >= 3:
+                if early_stop_count >= 2:
                     print("🛑 早停触发：防止过拟合")
                     break
 
