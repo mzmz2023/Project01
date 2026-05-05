@@ -48,12 +48,19 @@ def get_recommendations(user_id: int, top_n: int = 20):
     if user_id <= 0:
         return error(1001, "用户不存在")
 
-    from server.model_loader import model_loader
-    model_loader.load()
+    # ====================== 选择 1：使用假数据（测试前端）======================
+    test_data = [
+        {"movie_id": 1, "title": "流浪地球", "score": 9.0, "poster": "", "reason": "科幻推荐"},
+        {"movie_id": 2, "title": "满江红", "score": 8.5, "poster": "", "reason": "悬疑推荐"},
+        {"movie_id": 3, "title": "哪吒", "score": 8.8, "poster": "", "reason": "动画推荐"}
+    ]
+    return success(data=test_data)
 
-    result = model_loader.recommend_items(user_id=user_id, top_n=top_n)
-    return success(data=result)
-
+    # ====================== 选择 2：使用真实模型（想恢复就打开注释）======================
+    # from server.model_loader import model_loader
+    # model_loader.load()
+    # result = model_loader.recommend_items(user_id=user_id, top_n=top_n)
+    # return success(data=result)
 # ---------------------- 2. 电影详情接口 ----------------------
 @router.get("/movie/{movie_id}")
 def get_movie_detail(movie_id: int):
@@ -73,8 +80,9 @@ def get_similar(movie_id: int, top_n: int = 10):
     if movie_id <= 0:
         return error(1002, "电影不存在")
 
+    # ✅【只改这里】导入放进函数内 + 自动加载模型
     from server.model_loader import model_loader
-    model_loader.load()
+    model_loader.load()  # <--- 自动加载
 
     result = model_loader.get_similar_movies(movie_id=movie_id, top_n=top_n)
     return success(data=result)
@@ -94,20 +102,4 @@ def get_stats():
         "total_movies": 5000,
         "total_ratings": 100000,
         "avg_rating": 3.8
-    })
-
-# ---------------------- 6. 刷新用户推荐（前端需要！你之前缺这个！） ----------------------
-@router.post("/refresh/{user_id}")
-def refresh_recommendations(user_id: int, top_n: int = 20):
-    if user_id <= 0:
-        return error(1001, "用户不存在")
-
-    from server.model_loader import model_loader
-    model_loader.load()
-
-    # 重新生成推荐
-    result = model_loader.recommend_items(user_id=user_id, top_n=top_n)
-    return success(data={
-        "status": "refreshed",
-        "recommendations": result
     })
