@@ -4,7 +4,6 @@ from api import router
 
 app = FastAPI(title="Project01 推荐系统", version="1.0")
 
-# 🔥 解决浏览器 Failed to fetch 跨域问题（只加这段）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
