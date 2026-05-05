@@ -6,7 +6,7 @@ router = APIRouter()
 
 # ---------------------- 公共响应工具 ----------------------
 def success(data, message: str = "success") -> dict:
-    return {"code": 200, "message": message, "data": data}
+    return {"code": 0, "message": message, "data": data}
 
 def error(code: int, message: str) -> dict:
     return {"code": code, "message": message, "data": None}
@@ -48,9 +48,8 @@ def get_recommendations(user_id: int, top_n: int = 20):
     if user_id <= 0:
         return error(1001, "用户不存在")
 
-    # ✅【只改这里】导入放进函数内 + 自动加载模型
     from server.model_loader import model_loader
-    model_loader.load()  # <--- 自动加载
+    model_loader.load()
 
     result = model_loader.recommend_items(user_id=user_id, top_n=top_n)
     return success(data=result)
@@ -74,9 +73,8 @@ def get_similar(movie_id: int, top_n: int = 10):
     if movie_id <= 0:
         return error(1002, "电影不存在")
 
-    # ✅【只改这里】导入放进函数内 + 自动加载模型
     from server.model_loader import model_loader
-    model_loader.load()  # <--- 自动加载
+    model_loader.load()
 
     result = model_loader.get_similar_movies(movie_id=movie_id, top_n=top_n)
     return success(data=result)
@@ -96,4 +94,20 @@ def get_stats():
         "total_movies": 5000,
         "total_ratings": 100000,
         "avg_rating": 3.8
+    })
+
+# ---------------------- 6. 刷新用户推荐（前端需要！你之前缺这个！） ----------------------
+@router.post("/refresh/{user_id}")
+def refresh_recommendations(user_id: int, top_n: int = 20):
+    if user_id <= 0:
+        return error(1001, "用户不存在")
+
+    from server.model_loader import model_loader
+    model_loader.load()
+
+    # 重新生成推荐
+    result = model_loader.recommend_items(user_id=user_id, top_n=top_n)
+    return success(data={
+        "status": "refreshed",
+        "recommendations": result
     })
