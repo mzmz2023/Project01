@@ -38,7 +38,7 @@ warnings.filterwarnings('ignore')
 # ============================================================================
 # 路径配置
 # ============================================================================
-BASE_DIR = Path(r"d:\tools\GithubDesktop\gitClone\Project01")
+BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 ARCHIVE_DIR = DATA_DIR / "archive"
 FEATURES_DIR = BASE_DIR / "features"
@@ -396,7 +396,7 @@ axes[1,2].set_xlabel('Mean Rating'); axes[1,2].set_ylabel('Users')
 plt.tight_layout()
 plt.savefig(NOTEBOOKS_DIR / 'eda_visualizations.png', dpi=150, bbox_inches='tight')
 plt.close()
-print(f"\n   EDA 可视化 → data/eda_visualizations.png")
+print(f"\n   EDA 可视化 → notebooks/eda_visualizations.png")
 
 # ---- EDA 报告 ----
 eda_text = f"""
@@ -632,7 +632,7 @@ readme = f"""# Data 目录 — 数据集说明与处理脚本
 - 处理脚本: scripts/data_mining.py
 """
 with open(DATA_DIR / 'README.md', 'w', encoding='utf-8') as f:
-    f.write(data_readme)
+    f.write(readme)
 print("   data/README.md 已创建")
 
 # 创建 features/README.md
