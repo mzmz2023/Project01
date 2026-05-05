@@ -89,7 +89,7 @@ def submit_feedback(feedback: FeedbackRequest):
     return success(data={"status": "received"})
 
 # ---------------------- 5. 统计概览接口 ----------------------
-@router.get("/stats")
+@router.get("/stats/overview")
 def get_stats():
     return success(data={
         "total_users": 1000,
