@@ -18,20 +18,25 @@ class ModelLoader:
 
     def load(self):
         """加载模型文件和电影数据"""
+        print("🔍 开始加载模型...")
         if self.model_path:
             with open(self.model_path, "rb") as f:
                 self.model = pickle.load(f)
             print("✅ 推荐模型加载成功")
+            print(f"ℹ️ 模型包含 key: {list(self.model.keys())}")  # <-- 调试
         if self.movies_path:
             self.movies_df = pd.read_csv(self.movies_path)
             print("✅ 电影数据加载成功")
+            print(f"ℹ️ 电影数据行数: {len(self.movies_df)}")  # <-- 调试
 
     def recommend_items(self, user_id: int, top_n: int = 20) -> List[dict]:
         """
         对指定用户生成推荐列表
         基于 ItemCF 相似度矩阵：找到用户高分电影的相似电影，加权聚合后排 top_n
         """
+        print(f"\n🔍 开始为用户 {user_id} 生成推荐")  # <-- 调试
         if self.model is None or self.movies_df is None:
+            print("❌ 模型未加载！")
             return []
 
         sim = self.model.get('sim')
@@ -40,13 +45,20 @@ class ModelLoader:
             print("⚠️ 模型文件格式异常：缺少 'sim' 或 'ratings' 字段")
             return []
 
+        print(f"ℹ️ 模型中有用户数: {len(ratings)}")  # <-- 调试
+
         # 冷启动：用户无评分记录
         if user_id not in ratings:
+            print(f"⚠️ 用户 {user_id} 不在模型中！返回空列表")  # <-- 调试
             return []
 
         user_ratings = ratings[user_id]
+        print(f"ℹ️ 用户 {user_id} 共评分 {len(user_ratings)} 部电影")  # <-- 调试
+
         # 取用户评分 >= 4 的电影作为种子
         seed_movies = [mid for mid, r in user_ratings.items() if r >= 4]
+        print(f"ℹ️ 用户 {user_id} 高分种子电影: {seed_movies[:5]}...")  # <-- 调试
+
         if not seed_movies:
             seed_movies = list(user_ratings.keys())
 
@@ -61,6 +73,8 @@ class ModelLoader:
                 if sim_mid in user_ratings:
                     continue  # 已评分，跳过
                 scores[sim_mid] = scores.get(sim_mid, 0) + sim_val * user_ratings[mid]
+
+        print(f"ℹ️ 生成候选推荐数量: {len(scores)}")  # <-- 调试
 
         # 按得分降序排列
         sorted_items = sorted(scores.items(), key=lambda x: -x[1])
@@ -77,6 +91,8 @@ class ModelLoader:
                 "title": title,
                 "score": round(float(score), 4)
             })
+
+        print(f"✅ 最终返回推荐数量: {len(results)}")  # <-- 调试
         return results
 
     def get_similar_movies(self, movie_id: int, top_n: int = 10) -> List[dict]:
