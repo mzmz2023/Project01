@@ -65,19 +65,7 @@ try:
     movie_features.to_sql("movie_features", engine, if_exists="append", index=False)
     print("movie_features 表写入完成")
 
-    # ---------------------- 3. 创建推荐结果缓存表（schema.sql 已有，此处兼容旧版） ----------------------
-    with engine.connect() as conn:
-        conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS rec_cache (
-            user_id INTEGER PRIMARY KEY,
-            rec_movies TEXT NOT NULL,
-            expire_time TIMESTAMP NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """))
-        conn.commit()
-    print("✅ 推荐结果缓存表创建完成！")
-
+    # ---------------------- 3. 完成 ----------------------
     print("\n✅ 全部成功！数据库文件已生成：db/recommend.db")
 
 except Exception as e:

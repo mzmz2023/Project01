@@ -31,23 +31,39 @@ CREATE TABLE IF NOT EXISTS ratings (
 CREATE INDEX IF NOT EXISTS idx_ratings_user ON ratings(user_id);
 CREATE INDEX IF NOT EXISTS idx_ratings_movie ON ratings(movie_id);
 
--- 用户特征表
+-- 用户特征表（列定义与 features/user_features.csv 一致）
 CREATE TABLE IF NOT EXISTS user_features (
-    user_id INTEGER PRIMARY KEY,
-    age INTEGER,
-    gender TEXT,
-    occupation TEXT,
-    -- 其他特征字段由 EDA 确定后补充
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    CustomerID INTEGER PRIMARY KEY,
+    rating_count INTEGER,
+    rating_mean REAL,
+    rating_std REAL,
+    rating_min INTEGER,
+    rating_max INTEGER,
+    rating_median REAL,
+    rating_skew REAL,
+    first_date TEXT,
+    last_date TEXT,
+    active_days INTEGER,
+    rating_frequency REAL,
+    high_rating_ratio REAL,
+    activity_level TEXT
 );
 
--- 电影特征表
+-- 电影特征表（列定义与 features/movie_features.csv 一致）
 CREATE TABLE IF NOT EXISTS movie_features (
-    movie_id INTEGER PRIMARY KEY,
-    -- 特征向量或标签序列化字段（JSON / 逗号分隔），具体格式由 A、B 商定
-    feature_vector TEXT,
-    tag TEXT,
-    FOREIGN KEY (movie_id) REFERENCES movies(movie_id)
+    MovieID INTEGER PRIMARY KEY,
+    rating_count INTEGER,
+    rating_mean REAL,
+    rating_std REAL,
+    rating_min INTEGER,
+    rating_max INTEGER,
+    rating_median REAL,
+    Year INTEGER,
+    Title TEXT,
+    movie_age INTEGER,
+    title_length INTEGER,
+    era TEXT,
+    popularity_level TEXT
 );
 
 -- 推荐结果缓存表
