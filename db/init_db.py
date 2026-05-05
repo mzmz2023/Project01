@@ -1,3 +1,6 @@
+import os
+# 固定工作目录为项目根目录
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
 from sqlalchemy import create_engine, text
 import os
