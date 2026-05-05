@@ -1,7 +1,17 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from api import router
 
 app = FastAPI(title="Project01 推荐系统", version="1.0")
+
+# 🔥 解决浏览器 Failed to fetch 跨域问题（只加这段）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(router, prefix="/api")
 

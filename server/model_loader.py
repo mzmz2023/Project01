@@ -46,7 +46,7 @@ class ModelLoader:
             return []
 
         print(f"ℹ️ 模型中有用户数: {len(ratings)}")  # <-- 调试
-
+        print(f"ℹ️ 模型里的用户ID示例: {list(ratings.keys())[:10]}")
         # 冷启动：用户无评分记录
         if user_id not in ratings:
             print(f"⚠️ 用户 {user_id} 不在模型中！返回空列表")  # <-- 调试
