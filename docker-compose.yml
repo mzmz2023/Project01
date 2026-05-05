@@ -6,6 +6,8 @@ services:
       - "8000:8000"
     volumes:
       - ./db/recommend.db:/app/db/recommend.db
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/app
 
