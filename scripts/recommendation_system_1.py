@@ -29,11 +29,22 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+import yaml
 
 # ===================== 【2. 全局配置】 =====================
 # 解决matplotlib中文显示问题
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置中文黑体
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
+# 加载外部超参数配置文件
+def load_config(config_path="configs/model_config.yaml"):
+    """从YAML文件加载超参数配置"""
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    print(f"✅ 已加载配置文件：{config_path}")
+    return config
+
+CONFIG = load_config()
 
 # 自动检测计算设备（GPU/CPU）
 print("=" * 50)
@@ -49,11 +60,12 @@ time.sleep(1)  # 暂停1秒，方便查看设备信息
 
 
 # ===================== 【3. 数据加载与预处理函数】 =====================
-def load_data(data_path):
+def load_data(data_path, config):
     """
     加载并预处理评分数据和电影数据
     参数：
         data_path: 评分数据文件路径（支持.csv/.parquet）
+        config: 超参数字典（控制过滤阈值、数据划分比例等）
     返回：
         df_movies: 电影信息数据框
         train_data: 训练集数据
@@ -87,8 +99,8 @@ def load_data(data_path):
     print("\n正在过滤低频用户和电影...")
     user_counts = df_ratings['CustomerID'].value_counts()
     movie_counts = df_ratings['MovieID'].value_counts()
-    active_users = user_counts[user_counts >= 5].index
-    active_movies = movie_counts[movie_counts >= 10].index
+    active_users = user_counts[user_counts >= config['data']['min_user_ratings']].index
+    active_movies = movie_counts[movie_counts >= config['data']['min_movie_ratings']].index
     df_ratings = df_ratings[
         df_ratings['CustomerID'].isin(active_users) &
         df_ratings['MovieID'].isin(active_movies)
@@ -113,10 +125,10 @@ def load_data(data_path):
     df_ratings['user_idx'] = df_ratings['CustomerID'].map(user_id_to_idx)
     df_ratings['movie_idx'] = df_ratings['MovieID'].map(movie_id_to_idx)
 
-    # 划分训练集/测试集/验证集（80%训练，16%测试，4%验证）
+    # 划分训练集/测试集/验证集（比例由配置文件控制）
     print("\n正在划分训练集/测试集/验证集...")
-    train_data, test_data = train_test_split(df_ratings, test_size=0.2, random_state=42)
-    train_data, val_data = train_test_split(train_data, test_size=0.05, random_state=42)
+    train_data, test_data = train_test_split(df_ratings, test_size=config['data']['test_size'], random_state=config['data']['random_state'])
+    train_data, val_data = train_test_split(train_data, test_size=config['data']['val_size'], random_state=config['data']['random_state'])
 
     # 整理ID映射字典
     id_mappings = {
@@ -136,13 +148,15 @@ class ItemCF:
     核心思想：计算物品（电影）之间的相似度，基于用户对相似物品的评分预测目标物品评分
     """
 
-    def __init__(self, train_data):
+    def __init__(self, train_data, top_k=10):
         """
         初始化函数
         参数：
             train_data: 训练集数据框（包含CustomerID/MovieID/Rating列）
+            top_k: 相似邻居数，取前top_k个相似电影做加权预测
         """
         self.train_data = train_data  # 训练数据
+        self.top_k = top_k  # 相似邻居数
         self.movie_similarity = None  # 电影相似度矩阵
         self.user_movie_ratings = None  # 用户-电影评分字典
         self.movie2idx = {}  # 电影ID→索引映射
@@ -232,8 +246,8 @@ class ItemCF:
         if movie_id not in self.movie_similarity.index:
             return np.mean(list(user_rated_movies.values()))
 
-        # 取相似度最高的前10个相似电影（排除自身）
-        similar_movies = self.movie_similarity[movie_id].sort_values(ascending=False)[1:11]
+        # 取相似度最高的前top_k个相似电影（排除自身）
+        similar_movies = self.movie_similarity[movie_id].sort_values(ascending=False)[1:self.top_k + 1]
         weighted_sum = 0.0  # 加权评分和
         similarity_sum = 0.0  # 相似度和
 
@@ -326,25 +340,23 @@ class ALSRecommender:
     ALS推荐器：封装模型训练、评估、预测逻辑
     """
 
-    def __init__(self, train_data, val_data, id_mappings, n_factors=64, lr=0.002, epochs=15, batch_size=16384):
+    def __init__(self, train_data, val_data, id_mappings, als_config):
         """
         初始化ALS推荐器
         参数：
             train_data: 训练集数据
             val_data: 验证集数据
             id_mappings: ID映射字典
-            n_factors: 嵌入维度（默认128）
-            lr: 学习率（默认0.001）
-            epochs: 训练轮数（默认25）
-            batch_size: 批次大小（默认8192）
+            als_config: ALS超参数字典（包含n_factors/lr/epochs/batch_size等）
         """
         self.train_data = train_data  # 训练数据
         self.val_data = val_data  # 验证数据
         self.id_mappings = id_mappings  # ID映射
-        self.n_factors = n_factors  # 嵌入维度
-        self.lr = lr  # 学习率
-        self.epochs = epochs  # 训练轮数
-        self.batch_size = batch_size  # 批次大小
+        self.als_config = als_config  # ALS超参数字典
+        self.n_factors = als_config.get('n_factors', 64)
+        self.lr = als_config.get('lr', 0.002)
+        self.epochs = als_config.get('epochs', 15)
+        self.batch_size = als_config.get('batch_size', 16384)
         self.model = None  # ALS模型实例
         self.train_rmse_list = []  # 训练集RMSE记录
         self.val_rmse_list = []  # 验证集RMSE记录
@@ -409,9 +421,13 @@ class ALSRecommender:
         # 损失函数：均方误差（MSE）
         criterion = nn.MSELoss()
         # 优化器：Adam（带权重衰减，防止过拟合）
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-5)
-        # 学习率调度器：验证集RMSE停止下降时，学习率减半（耐心值2）
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.als_config.get('weight_decay', 1e-5))
+        # 学习率调度器：验证集RMSE停止下降时，学习率减半
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            patience=self.als_config.get('scheduler_patience', 2),
+            factor=self.als_config.get('scheduler_factor', 0.5)
+        )
 
         # 创建数据加载器
         train_loader = DataLoader(RatingDataset(self.train_data), batch_size=self.batch_size, shuffle=True)
@@ -457,13 +473,13 @@ class ALSRecommender:
             # 打印本轮训练结果
             print(f"✅ Epoch {epoch + 1} | 训练RMSE: {train_rmse:.4f} | 验证RMSE: {val_rmse:.4f}")
 
-            # 早停逻辑：验证集RMSE未提升时计数，累计3轮则停止训练
+            # 早停逻辑：验证集RMSE未提升时计数，累计超过早停耐心值则停止训练
             if val_rmse < best_val_rmse:
                 best_val_rmse = val_rmse
                 early_stop_count = 0
             else:
                 early_stop_count += 1
-                if early_stop_count >= 2:
+                if early_stop_count >= self.als_config.get('early_stop_patience', 2):
                     print("🛑 早停触发：防止过拟合")
                     break
 
@@ -491,21 +507,23 @@ class ALSRecommender:
 
 
 # ===================== 【6. 模型评估函数】 =====================
-def calculate_rmse(model, test_data, model_type):
+def calculate_rmse(model, test_data, model_type, config):
     """
-    计算模型在测试集上的RMSE（随机采样10万条数据，加快评估速度）
+    计算模型在测试集上的RMSE（随机采样加快评估速度）
     参数：
         model: 待评估模型（ItemCF/ALS）
         test_data: 测试集数据
         model_type: 模型名称（用于打印日志）
+        config: 超参数字典（控制采样数量等）
     返回：
         rmse: 测试集RMSE值
     """
     predictions = []  # 预测评分列表
     true_ratings = []  # 真实评分列表
 
-    # 随机采样10万条数据（避免全量评估耗时过长）
-    test_sample = test_data.sample(n=100000, random_state=42)
+    # 随机采样指定数量数据（避免全量评估耗时过长）
+    sample_size = config['eval']['sample_size']
+    test_sample = test_data.sample(n=sample_size, random_state=config['data']['random_state'])
 
     # 批量预测
     for _, row in tqdm(test_sample.iterrows(), total=len(test_sample), desc=f"评估{model_type}"):
@@ -552,22 +570,23 @@ def save_model_files(item_cf, als, df_movies, save_folder):
 
 
 # ===================== 【8. 核心训练流程函数】 =====================
-def train_and_save(data_path, save_folder):
+def train_and_save(data_path, save_folder, config):
     """
     端到端训练流程：加载数据 → 训练ItemCF → 训练ALS → 评估 → 保存模型
     参数：
         data_path: 数据文件路径
         save_folder: 模型保存文件夹
+        config: 超参数字典
     """
     # 步骤1：加载并预处理数据
-    df_movies, train_data, val_data, test_data, id_mappings = load_data(data_path)
+    df_movies, train_data, val_data, test_data, id_mappings = load_data(data_path, config)
 
     # 步骤2：训练ItemCF模型
-    item_cf = ItemCF(train_data)
+    item_cf = ItemCF(train_data, top_k=config['itemcf']['top_k'])
     item_cf.fit()
 
     # 步骤3：训练ALS模型
-    als = ALSRecommender(train_data, val_data, id_mappings)
+    als = ALSRecommender(train_data, val_data, id_mappings, config['als'])
     als.fit()
     # 保存RMSE曲线（区分不同数据集）
     als.plot_rmse_curve(f'RMSE_{save_folder}.png')
@@ -575,8 +594,8 @@ def train_and_save(data_path, save_folder):
     # 步骤4：模型评估（对比ItemCF和ALS）
     print("\n" + "=" * 50)
     print(f"【{save_folder} 模型对比】")
-    calculate_rmse(item_cf, test_data, "ItemCF")
-    calculate_rmse(als, test_data, "ALS")
+    calculate_rmse(item_cf, test_data, "ItemCF", config)
+    calculate_rmse(als, test_data, "ALS", config)
     print("=" * 50)
 
     # 步骤5：保存模型文件
@@ -594,7 +613,8 @@ if __name__ == "__main__":
     print("=" * 50)
     train_and_save(
         data_path='data/ratings_clean.csv',
-        save_folder='models_small_csv'  # 小样本模型保存文件夹
+        save_folder='models_small_csv',  # 小样本模型保存文件夹
+        config=CONFIG
     )
 
     # 第二步：训练全量Parquet数据（ratings_clean.parquet）
@@ -603,7 +623,8 @@ if __name__ == "__main__":
     print("=" * 50)
     train_and_save(
         data_path='data/ratings_clean.parquet',
-        save_folder='models_full_parquet'  # 全量模型保存文件夹
+        save_folder='models_full_parquet',  # 全量模型保存文件夹
+        config=CONFIG
     )
 
     # 训练完成提示
