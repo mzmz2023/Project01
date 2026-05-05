@@ -1,3 +1,4 @@
 {"remote.WSL.enabled": false,
-"remote.containers.enabled": false
+"remote.containers.enabled": false,
+"git.ignoreLimitWarning": true
 }
