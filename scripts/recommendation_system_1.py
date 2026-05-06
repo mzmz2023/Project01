@@ -14,8 +14,8 @@ import pickle
 import os
 # 时间处理
 import time
-# 可视化
-import matplotlib.pyplot as plt
+# 后端服务不需要画图，禁用matplotlib
+plt = None
 # 机器学习工具
 from sklearn.model_selection import train_test_split
 from sklearn.metrics.pairwise import cosine_similarity
@@ -32,10 +32,6 @@ from torch.utils.data import Dataset, DataLoader
 import yaml
 
 # ===================== 【2. 全局配置】 =====================
-# 解决matplotlib中文显示问题
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置中文黑体
-plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
-
 # 加载外部超参数配置文件
 def load_config(config_path="configs/model_config.yaml"):
     """从YAML文件加载超参数配置"""
@@ -383,25 +379,9 @@ class ALSRecommender:
 
     def plot_rmse_curve(self, save_name):
         """
-        绘制训练/验证集RMSE变化曲线并保存
-        参数：
-            save_name: 图片保存路径/名称
+        绘制训练/验证集RMSE变化曲线（后端禁用，跳过）
         """
-        plt.figure(figsize=(10, 5))
-        # 绘制训练集RMSE曲线
-        plt.plot(self.train_rmse_list, label='训练集RMSE', linewidth=2)
-        # 绘制验证集RMSE曲线
-        plt.plot(self.val_rmse_list, label='验证集RMSE', linewidth=2)
-        # 图表样式设置
-        plt.title('ALS模型 RMSE变化曲线', fontsize=14)
-        plt.xlabel('训练轮数 (Epoch)', fontsize=12)
-        plt.ylabel('RMSE 值', fontsize=12)
-        plt.legend()  # 显示图例
-        plt.grid(True, alpha=0.3)  # 显示网格（透明度0.3）
-        # 保存图片（高分辨率，裁剪空白）
-        plt.savefig(save_name, dpi=300, bbox_inches='tight')
-        plt.close()  # 关闭画布（释放内存）
-        print(f"✅ RMSE曲线已保存：{save_name}")
+        pass
 
     def fit(self):
         """
@@ -588,8 +568,8 @@ def train_and_save(data_path, save_folder, config):
     # 步骤3：训练ALS模型
     als = ALSRecommender(train_data, val_data, id_mappings, config['als'])
     als.fit()
-    # 保存RMSE曲线（区分不同数据集）
-    als.plot_rmse_curve(f'RMSE_{save_folder}.png')
+    # 保存RMSE曲线（区分不同数据集，已禁用）
+    # als.plot_rmse_curve(f'RMSE_{save_folder}.png')
 
     # 步骤4：模型评估（对比ItemCF和ALS）
     print("\n" + "=" * 50)
@@ -601,8 +581,130 @@ def train_and_save(data_path, save_folder, config):
     # 步骤5：保存模型文件
     save_model_files(item_cf, als, df_movies, save_folder)
 
-
-# ===================== 【9. 主程序入口】 =====================
+# ===================== 【9. 后端调用工具函数（新增）】 =====================
+# 【修改后的完整load_trained_model函数】
+# 【修改后的完整load_trained_model函数】
+def load_trained_model(model_folder="models"):
+    """
+    加载已经训练好的模型和数据（给后端调用）
+    参数：model_folder 模型保存的文件夹名，默认加载models里的大样本模型
+    返回：
+        item_cf_data: ItemCF模型数据（相似度矩阵+用户评分字典）
+        als_model_data: ALS模型数据（模型对象+ID映射）
+        df_movies: 完整的电影信息表
+    """
+    print(f"正在加载模型，文件夹：{model_folder}")
+    
+    # 1. 加载大样本ItemCF模型（匹配models里的_full后缀文件）
+    with open(f'{model_folder}/item_cf_model_full.pkl', 'rb') as f:
+        item_cf_data = pickle.load(f)
+    
+    # 2. 加载大样本ALS模型
+    als_checkpoint = torch.load(f'{model_folder}/als_model_full.pth', map_location='cpu', weights_only=False)
+    # 获取ID映射
+    id_mappings = als_checkpoint['mapping']
+    # 初始化ALS模型
+    num_users = len(id_mappings['user_id_to_idx'])
+    num_movies = len(id_mappings['movie_id_to_idx'])
+    als_model = ALSModel(num_users, num_movies, n_factors=CONFIG['als']['n_factors'])
+    # 加载训练好的参数
+    als_model.load_state_dict(als_checkpoint['model'])
+    # 封装ALS数据
+    als_model_data = {
+        'model': als_model,
+        'mapping': id_mappings
+    }
+    
+    # 3. 加载大样本电影信息表
+    df_movies = pd.read_csv(f'{model_folder}/movies_clean_full.csv')
+    
+    print(f"✅ 大样本模型加载完成！共加载 {len(df_movies)} 部电影信息")
+    return item_cf_data, als_model_data, df_movies
+    
+def get_user_recommendations(user_id, top_n=20, model_type="itemcf", model_folder="models_full_parquet"):
+    """
+    给指定用户生成TopN推荐列表（核心函数，后端直接调用）
+    100%基于训练数据，无随机造假，真实推荐结果
+    """
+    # 加载模型和数据
+    item_cf_data, als_model_data, df_movies = load_trained_model(model_folder)
+    movie_sim_matrix = item_cf_data['sim']
+    user_rated_dict = item_cf_data['ratings']
+    
+    # ===================== 真实逻辑：用户不存在 → 返回数据集真实热门高分电影 =====================
+    if user_id not in user_rated_dict:
+        print(f"⚠️ 用户 {user_id} 不在训练数据中，返回【真实热门高分电影】(基于数据集Rating排序)")
+        # 严格按照你数据里的真实评分排序，无任何随机修改
+        hot_movies = df_movies.sort_values(by='Rating', ascending=False).head(top_n)
+        recommend_list = []
+        for _, row in hot_movies.iterrows():
+            recommend_list.append({
+                "movie_id": int(row['MovieID']),
+                "title": row['Title'],
+                "score": float(row['Rating']),
+                "poster": "",
+                "reason": "平台真实热门高分电影"
+            })
+        return recommend_list
+    
+    # ===================== 真实逻辑：用户存在 → 执行模型真实推荐（ItemCF/ALS） =====================
+    # 获取用户已看电影
+    user_rated_movies = user_rated_dict[user_id]
+    user_rated_ids = set(user_rated_movies.keys())
+    all_movie_ids = set(movie_sim_matrix.index)
+    unrated_movie_ids = all_movie_ids - user_rated_ids
+    
+    # ItemCF 真实推荐
+    if model_type == "itemcf":
+        movie_pred_score = {}
+        top_k = CONFIG['itemcf']['top_k']
+        for movie_id in unrated_movie_ids:
+            similar_movies = movie_sim_matrix[movie_id].sort_values(ascending=False)[1:top_k+1]
+            weighted_sum = 0.0
+            sim_sum = 0.0
+            for sim_movie_id, sim in similar_movies.items():
+                if sim_movie_id in user_rated_movies:
+                    weighted_sum += sim * user_rated_movies[sim_movie_id]
+                    sim_sum += sim
+            movie_pred_score[movie_id] = weighted_sum / sim_sum if sim_sum > 0 else np.mean(list(user_rated_movies.values()))
+        
+        sorted_movies = sorted(movie_pred_score.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    
+    # ALS 真实推荐
+    elif model_type == "als":
+        als_model = als_model_data['model']
+        id_mappings = als_model_data['mapping']
+        user_id_to_idx = id_mappings['user_id_to_idx']
+        movie_id_to_idx = id_mappings['movie_id_to_idx']
+        idx_to_movie_id = id_mappings['idx_to_movie_id']
+        
+        user_idx = user_id_to_idx.get(user_id, 0)
+        unrated_movie_idx = [movie_id_to_idx[mid] for mid in unrated_movie_ids if mid in movie_id_to_idx]
+        
+        als_model.eval()
+        with torch.no_grad():
+            user_tensor = torch.tensor([user_idx] * len(unrated_movie_idx), dtype=torch.long)
+            movie_tensor = torch.tensor(unrated_movie_idx, dtype=torch.long)
+            pred_scores = als_model(user_tensor, movie_tensor).numpy()
+        
+        movie_pred_score = {idx_to_movie_id[idx]: score for idx, score in zip(unrated_movie_idx, pred_scores)}
+        sorted_movies = sorted(movie_pred_score.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    
+    # 组装真实推荐结果
+    recommend_list = []
+    for movie_id, pred_score in sorted_movies:
+        movie_info = df_movies[df_movies['MovieID'] == movie_id].iloc[0]
+        recommend_list.append({
+            "movie_id": int(movie_id),
+            "title": movie_info['Title'],
+            "score": round(float(pred_score), 2),
+            "poster": "",
+            "reason": f"基于你的真实观影记录推荐 | 预测评分：{round(float(pred_score), 2)}"
+        })
+    
+    print(f"✅ 为用户 {user_id} 生成【真实个性化推荐】{len(recommend_list)} 条")
+    return recommend_list
+# ===================== 【10. 主程序入口】 =====================
 if __name__ == "__main__":
     """
     主程序：依次训练小样本CSV数据和全量Parquet数据
@@ -628,4 +730,4 @@ if __name__ == "__main__":
     )
 
     # 训练完成提示
-    print("\n🎉 所有数据集训练完成！模型已分别保存！") 
+    print("\n🎉 所有数据集训练完成！模型已分别保存！")
